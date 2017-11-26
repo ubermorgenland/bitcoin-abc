@@ -370,8 +370,8 @@
         <translation>說明 &amp;H</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
-        <translation>要求付款 (產生QR碼 bitcoin: URIs)</translation>
+        <source>Request payments (generates QR codes and %1 URIs)</source>
+        <translation>要求付款 (產生QR碼 %1 URIs)</translation>
     </message>
     <message>
         <source>Indexing blocks on disk...</source>
@@ -652,7 +652,7 @@
     <name>WalletView</name>
     </context>
 <context>
-    <name>bitcoin-core</name>
+    <name>bitcoin-abc</name>
     <message>
         <source>Information</source>
         <translation>資訊</translation>

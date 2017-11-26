@@ -3,7 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "zmqpublishnotifier.h"
-#include "chainparams.h"
+#include "config.h"
 #include "rpc/server.h"
 #include "streams.h"
 #include "util.h"
@@ -122,7 +122,7 @@ bool CZMQAbstractPublishNotifier::SendMessage(const char *command,
     assert(psocket);
 
     /* send three parts, command & data & a LE 4byte sequence number */
-    unsigned char msgseq[sizeof(uint32_t)];
+    uint8_t msgseq[sizeof(uint32_t)];
     WriteLE32(&msgseq[0], nSequence);
     int rc = zmq_send_multipart(psocket, command, strlen(command), data, size,
                                 msgseq, (size_t)sizeof(uint32_t), (void *)0);
@@ -157,12 +157,12 @@ bool CZMQPublishRawBlockNotifier::NotifyBlock(const CBlockIndex *pindex) {
     LogPrint("zmq", "zmq: Publish rawblock %s\n",
              pindex->GetBlockHash().GetHex());
 
-    const Consensus::Params &consensusParams = Params().GetConsensus();
+    const Config &config = GetConfig();
     CDataStream ss(SER_NETWORK, PROTOCOL_VERSION | RPCSerializationFlags());
     {
         LOCK(cs_main);
         CBlock block;
-        if (!ReadBlockFromDisk(block, pindex, consensusParams)) {
+        if (!ReadBlockFromDisk(block, pindex, config)) {
             zmqError("Can't read block from disk");
             return false;
         }

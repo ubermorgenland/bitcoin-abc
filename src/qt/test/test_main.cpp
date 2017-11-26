@@ -8,6 +8,7 @@
 
 #include "chainparams.h"
 #include "compattests.h"
+#include "guiutiltests.h"
 #include "key.h"
 #include "rpcnestedtests.h"
 #include "uritests.h"
@@ -46,7 +47,7 @@ int main(int argc, char *argv[]) {
     // Don't remove this, it's needed to access
     // QCoreApplication:: in the tests
     QCoreApplication app(argc, argv);
-    app.setApplicationName("Bitcoin-Qt-test");
+    app.setApplicationName("BitcoinABC-Qt-test");
 
     SSL_library_init();
 
@@ -60,6 +61,8 @@ int main(int argc, char *argv[]) {
     if (QTest::qExec(&test3) != 0) fInvalid = true;
     CompatTests test4;
     if (QTest::qExec(&test4) != 0) fInvalid = true;
+    GUIUtilTests test5;
+    if (QTest::qExec(&test5) != 0) fInvalid = true;
 
     ECC_Stop();
     return fInvalid;

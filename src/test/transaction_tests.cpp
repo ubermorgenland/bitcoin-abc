@@ -28,7 +28,7 @@
 
 #include <univalue.h>
 
-typedef std::vector<unsigned char> valtype;
+typedef std::vector<uint8_t> valtype;
 
 // In script_tests.cpp
 extern UniValue read_json(const std::string &jsondata);
@@ -60,7 +60,7 @@ BOOST_AUTO_TEST_CASE(tx_valid) {
             }
 
             std::map<COutPoint, CScript> mapprevOutScriptPubKeys;
-            std::map<COutPoint, int64_t> mapprevOutValues;
+            std::map<COutPoint, Amount> mapprevOutValues;
             UniValue inputs = test[0].get_array();
             bool fValid = true;
             for (size_t inpIdx = 0; inpIdx < inputs.size(); inpIdx++) {
@@ -79,7 +79,7 @@ BOOST_AUTO_TEST_CASE(tx_valid) {
                 mapprevOutScriptPubKeys[outpoint] =
                     ParseScript(vinput[2].get_str());
                 if (vinput.size() >= 4) {
-                    mapprevOutValues[outpoint] = vinput[3].get_int64();
+                    mapprevOutValues[outpoint] = Amount(vinput[3].get_int64());
                 }
             }
             if (!fValid) {
@@ -106,9 +106,9 @@ BOOST_AUTO_TEST_CASE(tx_valid) {
                     break;
                 }
 
-                CAmount amount = 0;
+                Amount amount(0);
                 if (mapprevOutValues.count(tx.vin[i].prevout)) {
-                    amount = mapprevOutValues[tx.vin[i].prevout];
+                    amount = Amount(mapprevOutValues[tx.vin[i].prevout]);
                 }
 
                 uint32_t verify_flags = ParseScriptFlags(test[2].get_str());
@@ -151,7 +151,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid) {
             }
 
             std::map<COutPoint, CScript> mapprevOutScriptPubKeys;
-            std::map<COutPoint, int64_t> mapprevOutValues;
+            std::map<COutPoint, Amount> mapprevOutValues;
             UniValue inputs = test[0].get_array();
             bool fValid = true;
             for (size_t inpIdx = 0; inpIdx < inputs.size(); inpIdx++) {
@@ -170,7 +170,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid) {
                 mapprevOutScriptPubKeys[outpoint] =
                     ParseScript(vinput[2].get_str());
                 if (vinput.size() >= 4) {
-                    mapprevOutValues[outpoint] = vinput[3].get_int64();
+                    mapprevOutValues[outpoint] = Amount(vinput[3].get_int64());
                 }
             }
             if (!fValid) {
@@ -193,8 +193,8 @@ BOOST_AUTO_TEST_CASE(tx_invalid) {
                     break;
                 }
 
-                CAmount amount = 0;
-                if (mapprevOutValues.count(tx.vin[i].prevout)) {
+                Amount amount(0);
+                if (0 != mapprevOutValues.count(tx.vin[i].prevout)) {
                     amount = mapprevOutValues[tx.vin[i].prevout];
                 }
 
@@ -213,7 +213,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid) {
 BOOST_AUTO_TEST_CASE(basic_transaction_tests) {
     // Random real transaction
     // (e2769b09e784f32f62ef849763d4f45b98e07ba658647343b915ff832b110436)
-    unsigned char ch[] = {
+    uint8_t ch[] = {
         0x01, 0x00, 0x00, 0x00, 0x01, 0x6b, 0xff, 0x7f, 0xcd, 0x4f, 0x85, 0x65,
         0xef, 0x40, 0x6d, 0xd5, 0xd6, 0x3d, 0x4f, 0xf9, 0x4f, 0x31, 0x8f, 0xe8,
         0x20, 0x27, 0xfd, 0x4d, 0xc4, 0x51, 0xb0, 0x44, 0x74, 0x01, 0x9f, 0x74,
@@ -236,7 +236,7 @@ BOOST_AUTO_TEST_CASE(basic_transaction_tests) {
         0x00, 0x19, 0x76, 0xa9, 0x14, 0xc1, 0x09, 0x32, 0x48, 0x3f, 0xec, 0x93,
         0xed, 0x51, 0xf5, 0xfe, 0x95, 0xe7, 0x25, 0x59, 0xf2, 0xcc, 0x70, 0x43,
         0xf9, 0x88, 0xac, 0x00, 0x00, 0x00, 0x00, 0x00};
-    std::vector<unsigned char> vch(ch, ch + sizeof(ch) - 1);
+    std::vector<uint8_t> vch(ch, ch + sizeof(ch) - 1);
     CDataStream stream(vch, SER_DISK, CLIENT_VERSION);
     CMutableTransaction tx;
     stream >> tx;
@@ -276,8 +276,7 @@ SetupDummyInputs(CBasicKeyStore &keystoreRet, CCoinsViewCache &coinsRet) {
     dummyTransactions[0].vout[1].nValue = 50 * CENT;
     dummyTransactions[0].vout[1].scriptPubKey
         << ToByteVector(key[1].GetPubKey()) << OP_CHECKSIG;
-    coinsRet.ModifyCoins(dummyTransactions[0].GetId())
-        ->FromTx(dummyTransactions[0], 0);
+    AddCoins(coinsRet, dummyTransactions[0], 0);
 
     dummyTransactions[1].vout.resize(2);
     dummyTransactions[1].vout[0].nValue = 21 * CENT;
@@ -286,8 +285,7 @@ SetupDummyInputs(CBasicKeyStore &keystoreRet, CCoinsViewCache &coinsRet) {
     dummyTransactions[1].vout[1].nValue = 22 * CENT;
     dummyTransactions[1].vout[1].scriptPubKey =
         GetScriptForDestination(key[3].GetPubKey().GetID());
-    coinsRet.ModifyCoins(dummyTransactions[1].GetId())
-        ->FromTx(dummyTransactions[1], 0);
+    AddCoins(coinsRet, dummyTransactions[1], 0);
 
     return dummyTransactions;
 }
@@ -303,15 +301,15 @@ BOOST_AUTO_TEST_CASE(test_Get) {
     t1.vin.resize(3);
     t1.vin[0].prevout.hash = dummyTransactions[0].GetId();
     t1.vin[0].prevout.n = 1;
-    t1.vin[0].scriptSig << std::vector<unsigned char>(65, 0);
+    t1.vin[0].scriptSig << std::vector<uint8_t>(65, 0);
     t1.vin[1].prevout.hash = dummyTransactions[1].GetId();
     t1.vin[1].prevout.n = 0;
-    t1.vin[1].scriptSig << std::vector<unsigned char>(65, 0)
-                        << std::vector<unsigned char>(33, 4);
+    t1.vin[1].scriptSig << std::vector<uint8_t>(65, 0)
+                        << std::vector<uint8_t>(33, 4);
     t1.vin[2].prevout.hash = dummyTransactions[1].GetId();
     t1.vin[2].prevout.n = 1;
-    t1.vin[2].scriptSig << std::vector<unsigned char>(65, 0)
-                        << std::vector<unsigned char>(33, 4);
+    t1.vin[2].scriptSig << std::vector<uint8_t>(65, 0)
+                        << std::vector<uint8_t>(33, 4);
     t1.vout.resize(2);
     t1.vout[0].nValue = 90 * CENT;
     t1.vout[0].scriptPubKey << OP_1;
@@ -329,14 +327,14 @@ void CreateCreditAndSpend(const CKeyStore &keystore, const CScript &outscript,
     outputm.vin[0].prevout.SetNull();
     outputm.vin[0].scriptSig = CScript();
     outputm.vout.resize(1);
-    outputm.vout[0].nValue = 1;
+    outputm.vout[0].nValue = Amount(1);
     outputm.vout[0].scriptPubKey = outscript;
     CDataStream ssout(SER_NETWORK, PROTOCOL_VERSION);
     ssout << outputm;
     ssout >> output;
-    BOOST_CHECK_EQUAL(output->vin.size(), 1);
+    BOOST_CHECK_EQUAL(output->vin.size(), 1UL);
     BOOST_CHECK(output->vin[0] == outputm.vin[0]);
-    BOOST_CHECK_EQUAL(output->vout.size(), 1);
+    BOOST_CHECK_EQUAL(output->vout.size(), 1UL);
     BOOST_CHECK(output->vout[0] == outputm.vout[0]);
 
     CMutableTransaction inputm;
@@ -345,16 +343,17 @@ void CreateCreditAndSpend(const CKeyStore &keystore, const CScript &outscript,
     inputm.vin[0].prevout.hash = output->GetId();
     inputm.vin[0].prevout.n = 0;
     inputm.vout.resize(1);
-    inputm.vout[0].nValue = 1;
+    inputm.vout[0].nValue = Amount(1);
     inputm.vout[0].scriptPubKey = CScript();
-    bool ret = SignSignature(keystore, *output, inputm, 0, SIGHASH_ALL);
+    bool ret = SignSignature(keystore, *output, inputm, 0,
+                             SIGHASH_ALL | SIGHASH_FORKID);
     BOOST_CHECK_EQUAL(ret, success);
     CDataStream ssin(SER_NETWORK, PROTOCOL_VERSION);
     ssin << inputm;
     ssin >> input;
-    BOOST_CHECK_EQUAL(input.vin.size(), 1);
+    BOOST_CHECK_EQUAL(input.vin.size(), 1UL);
     BOOST_CHECK(input.vin[0] == inputm.vin[0]);
-    BOOST_CHECK_EQUAL(input.vout.size(), 1);
+    BOOST_CHECK_EQUAL(input.vout.size(), 1UL);
     BOOST_CHECK(input.vout[0] == inputm.vout[0]);
 }
 
@@ -363,7 +362,8 @@ void CheckWithFlag(const CTransactionRef &output,
     ScriptError error;
     CTransaction inputi(input);
     bool ret = VerifyScript(
-        inputi.vin[0].scriptSig, output->vout[0].scriptPubKey, flags,
+        inputi.vin[0].scriptSig, output->vout[0].scriptPubKey,
+        flags | SCRIPT_ENABLE_SIGHASH_FORKID,
         TransactionSignatureChecker(&inputi, 0, output->vout[0].nValue),
         &error);
     BOOST_CHECK_EQUAL(ret, success);
@@ -388,7 +388,7 @@ void ReplaceRedeemScript(CScript &script, const CScript &redeemScript) {
     EvalScript(stack, script, SCRIPT_VERIFY_STRICTENC, BaseSignatureChecker());
     BOOST_CHECK(stack.size() > 0);
     stack.back() =
-        std::vector<unsigned char>(redeemScript.begin(), redeemScript.end());
+        std::vector<uint8_t>(redeemScript.begin(), redeemScript.end());
     script = PushAll(stack);
 }
 
@@ -530,7 +530,7 @@ BOOST_AUTO_TEST_CASE(test_IsStandard) {
     t.vin.resize(1);
     t.vin[0].prevout.hash = dummyTransactions[0].GetId();
     t.vin[0].prevout.n = 1;
-    t.vin[0].scriptSig << std::vector<unsigned char>(65, 0);
+    t.vin[0].scriptSig << std::vector<uint8_t>(65, 0);
     t.vout.resize(1);
     t.vout[0].nValue = 90 * CENT;
     CKey key;
@@ -541,10 +541,10 @@ BOOST_AUTO_TEST_CASE(test_IsStandard) {
     BOOST_CHECK(IsStandardTx(t, reason));
 
     // Check dust with default relay fee:
-    CAmount nDustThreshold = 182 * dustRelayFee.GetFeePerK() / 1000 * 3;
-    BOOST_CHECK_EQUAL(nDustThreshold, 546);
+    Amount nDustThreshold = 3 * 182 * dustRelayFee.GetFeePerK() / 1000;
+    BOOST_CHECK_EQUAL(nDustThreshold, Amount(546));
     // dust:
-    t.vout[0].nValue = nDustThreshold - 1;
+    t.vout[0].nValue = nDustThreshold - Amount(1);
     BOOST_CHECK(!IsStandardTx(t, reason));
     // not dust:
     t.vout[0].nValue = nDustThreshold;
@@ -552,12 +552,12 @@ BOOST_AUTO_TEST_CASE(test_IsStandard) {
 
     // Check dust with odd relay fee to verify rounding:
     // nDustThreshold = 182 * 1234 / 1000 * 3
-    dustRelayFee = CFeeRate(1234);
+    dustRelayFee = CFeeRate(Amount(1234));
     // dust:
-    t.vout[0].nValue = 672 - 1;
+    t.vout[0].nValue = Amount(672 - 1);
     BOOST_CHECK(!IsStandardTx(t, reason));
     // not dust:
-    t.vout[0].nValue = 672;
+    t.vout[0].nValue = Amount(672);
     BOOST_CHECK(IsStandardTx(t, reason));
     dustRelayFee = CFeeRate(DUST_RELAY_TX_FEE);
 

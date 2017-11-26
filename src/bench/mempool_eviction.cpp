@@ -9,7 +9,7 @@
 #include <list>
 #include <vector>
 
-static void AddTx(const CTransaction &tx, const CAmount &nFee,
+static void AddTx(const CTransaction &tx, const Amount &nFee,
                   CTxMemPool &pool) {
     int64_t nTime = 0;
     double dPriority = 10.0;
@@ -97,16 +97,16 @@ static void MempoolEviction(benchmark::State &state) {
     tx7.vout[1].scriptPubKey = CScript() << OP_7 << OP_EQUAL;
     tx7.vout[1].nValue = 10 * COIN;
 
-    CTxMemPool pool(CFeeRate(1000));
+    CTxMemPool pool(CFeeRate(Amount(1000)));
 
     while (state.KeepRunning()) {
-        AddTx(tx1, 10000LL, pool);
-        AddTx(tx2, 5000LL, pool);
-        AddTx(tx3, 20000LL, pool);
-        AddTx(tx4, 7000LL, pool);
-        AddTx(tx5, 1000LL, pool);
-        AddTx(tx6, 1100LL, pool);
-        AddTx(tx7, 9000LL, pool);
+        AddTx(tx1, Amount(10000LL), pool);
+        AddTx(tx2, Amount(5000LL), pool);
+        AddTx(tx3, Amount(20000LL), pool);
+        AddTx(tx4, Amount(7000LL), pool);
+        AddTx(tx5, Amount(1000LL), pool);
+        AddTx(tx6, Amount(1100LL), pool);
+        AddTx(tx7, Amount(9000LL), pool);
         pool.TrimToSize(pool.DynamicMemoryUsage() * 3 / 4);
         pool.TrimToSize(GetTransactionSize(tx1));
     }

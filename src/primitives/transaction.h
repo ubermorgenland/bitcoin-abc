@@ -125,12 +125,12 @@ public:
  */
 class CTxOut {
 public:
-    CAmount nValue;
+    Amount nValue;
     CScript scriptPubKey;
 
     CTxOut() { SetNull(); }
 
-    CTxOut(const CAmount &nValueIn, CScript scriptPubKeyIn);
+    CTxOut(const Amount &nValueIn, CScript scriptPubKeyIn);
 
     ADD_SERIALIZE_METHODS;
 
@@ -141,13 +141,13 @@ public:
     }
 
     void SetNull() {
-        nValue = -1;
+        nValue = Amount(-1);
         scriptPubKey.clear();
     }
 
-    bool IsNull() const { return (nValue == -1); }
+    bool IsNull() const { return (nValue == Amount(-1)); }
 
-    CAmount GetDustThreshold(const CFeeRate &minRelayTxFee) const {
+    Amount GetDustThreshold(const CFeeRate &minRelayTxFee) const {
         // "Dust" is defined in terms of CTransaction::minRelayTxFee, which has
         // units satoshis-per-kilobyte. If you'd pay more than 1/3 in fees to
         // spend something, then we consider it dust. A typical spendable
@@ -157,7 +157,7 @@ public:
         // txout is 31 bytes big, and will need a CTxIn of at least 67 bytes to
         // spend: so dust is a spendable txout less than 294*minRelayTxFee/1000
         // (in satoshis).
-        if (scriptPubKey.IsUnspendable()) return 0;
+        if (scriptPubKey.IsUnspendable()) return Amount(0);
 
         size_t nSize = GetSerializeSize(*this, SER_DISK, 0);
 
@@ -269,7 +269,7 @@ public:
     uint256 GetHash() const;
 
     // Return sum of txouts.
-    CAmount GetValueOut() const;
+    Amount GetValueOut() const;
     // GetValueIn() is a method on CCoinsViewCache, because
     // inputs must be known to compute value in.
 

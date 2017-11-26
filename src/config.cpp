@@ -7,6 +7,8 @@
 #include "consensus/consensus.h"
 #include "globals.h"
 
+GlobalConfig::GlobalConfig() : useCashAddr(false) {}
+
 bool GlobalConfig::SetMaxBlockSize(uint64_t maxBlockSize) {
     // Do not allow maxBlockSize to be set below historic 1MB limit
     // It cannot be equal either because of the "must be big" UAHF rule.
@@ -22,13 +24,17 @@ uint64_t GlobalConfig::GetMaxBlockSize() const {
     return nMaxBlockSize;
 }
 
-bool GlobalConfig::SetUAHFStartTime(int64_t uahfStartTime) {
-    nUAHFStartTime = uahfStartTime;
+bool GlobalConfig::SetBlockPriorityPercentage(int64_t blockPriorityPercentage) {
+    // blockPriorityPercentage has to belong to [0..100]
+    if ((blockPriorityPercentage < 0) || (blockPriorityPercentage > 100)) {
+        return false;
+    }
+    nBlockPriorityPercentage = blockPriorityPercentage;
     return true;
 }
 
-int64_t GlobalConfig::GetUAHFStartTime() const {
-    return nUAHFStartTime;
+uint8_t GlobalConfig::GetBlockPriorityPercentage() const {
+    return nBlockPriorityPercentage;
 }
 
 const CChainParams &GlobalConfig::GetChainParams() const {
@@ -39,4 +45,15 @@ static GlobalConfig gConfig;
 
 const Config &GetConfig() {
     return gConfig;
+}
+
+void GlobalConfig::SetCashAddrEncoding(bool c) {
+    useCashAddr = c;
+}
+bool GlobalConfig::UseCashAddrEncoding() const {
+    return useCashAddr;
+}
+
+const CChainParams &DummyConfig::GetChainParams() const {
+    return Params(CBaseChainParams::REGTEST);
 }

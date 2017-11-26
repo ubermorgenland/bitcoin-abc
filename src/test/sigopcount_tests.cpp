@@ -18,8 +18,8 @@
 #include <boost/test/unit_test.hpp>
 
 // Helpers:
-static std::vector<unsigned char> Serialize(const CScript &s) {
-    std::vector<unsigned char> sSerialized(s.begin(), s.end());
+static std::vector<uint8_t> Serialize(const CScript &s) {
+    std::vector<uint8_t> sSerialized(s.begin(), s.end());
     return sSerialized;
 }
 
@@ -92,7 +92,7 @@ void BuildTxs(CMutableTransaction &spendingTx, CCoinsViewCache &coins,
     creationTx.vin[0].prevout.SetNull();
     creationTx.vin[0].scriptSig = CScript();
     creationTx.vout.resize(1);
-    creationTx.vout[0].nValue = 1;
+    creationTx.vout[0].nValue = Amount(1);
     creationTx.vout[0].scriptPubKey = scriptPubKey;
 
     spendingTx.nVersion = 1;
@@ -101,10 +101,10 @@ void BuildTxs(CMutableTransaction &spendingTx, CCoinsViewCache &coins,
     spendingTx.vin[0].prevout.n = 0;
     spendingTx.vin[0].scriptSig = scriptSig;
     spendingTx.vout.resize(1);
-    spendingTx.vout[0].nValue = 1;
+    spendingTx.vout[0].nValue = Amount(1);
     spendingTx.vout[0].scriptPubKey = CScript();
 
-    coins.ModifyCoins(creationTx.GetId())->FromTx(creationTx, 0);
+    AddCoins(coins, creationTx, 0);
 }
 
 BOOST_AUTO_TEST_CASE(GetTxSigOpCost) {
@@ -193,7 +193,7 @@ BOOST_AUTO_TEST_CASE(test_max_sigops_per_tx) {
     tx.vin[0].prevout.n = 0;
     tx.vin[0].scriptSig = CScript();
     tx.vout.resize(1);
-    tx.vout[0].nValue = 1;
+    tx.vout[0].nValue = Amount(1);
     tx.vout[0].scriptPubKey = CScript();
 
     {

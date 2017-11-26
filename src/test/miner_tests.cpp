@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "miner.h"
+
 #include "chainparams.h"
 #include "coins.h"
 #include "config.h"
@@ -17,7 +18,6 @@
 #include "util.h"
 #include "utilstrencodings.h"
 #include "validation.h"
-#include "validation.h"
 
 #include "test/test_bitcoin.h"
 
@@ -30,7 +30,7 @@ BOOST_FIXTURE_TEST_SUITE(miner_tests, TestingSetup)
 static CFeeRate blockMinFeeRate = CFeeRate(DEFAULT_BLOCK_MIN_TX_FEE);
 
 static struct {
-    unsigned char extranonce;
+    uint8_t extranonce;
     unsigned int nonce;
 } blockinfo[] = {
     {4, 0xa4a3e223}, {2, 0x15c32f9e}, {1, 0x0375b547}, {1, 0x7004a8a5},
@@ -78,13 +78,16 @@ bool TestSequenceLocks(const CTransaction &tx, int flags) {
 // Test suite for ancestor feerate transaction selection.
 // Implemented as an additional function, rather than a separate test case, to
 // allow reusing the blockchain created in CreateNewBlock_validity.
-// Note that this test assumes blockprioritysize is 0.
+// Note that this test assumes blockprioritypercentage is 0.
 void TestPackageSelection(const CChainParams &chainparams, CScript scriptPubKey,
                           std::vector<CTransactionRef> &txFirst) {
     // Test the ancestor feerate transaction selection.
     TestMemPoolEntryHelper entry;
 
     GlobalConfig config;
+
+    // these 3 tests assume blockprioritypercentage is 0.
+    config.SetBlockPriorityPercentage(0);
 
     // Test that a medium fee transaction will be selected after a higher fee
     // rate package with a low fee rate parent.
@@ -94,30 +97,33 @@ void TestPackageSelection(const CChainParams &chainparams, CScript scriptPubKey,
     tx.vin[0].prevout.hash = txFirst[0]->GetId();
     tx.vin[0].prevout.n = 0;
     tx.vout.resize(1);
-    tx.vout[0].nValue = 5000000000LL - 1000;
+    tx.vout[0].nValue = Amount(5000000000LL - 1000);
     // This tx has a low fee: 1000 satoshis.
     // Save this txid for later use.
     uint256 hashParentTx = tx.GetId();
-    mempool.addUnchecked(
-        hashParentTx,
-        entry.Fee(1000).Time(GetTime()).SpendsCoinbase(true).FromTx(tx));
+    mempool.addUnchecked(hashParentTx, entry.Fee(Amount(1000))
+                                           .Time(GetTime())
+                                           .SpendsCoinbase(true)
+                                           .FromTx(tx));
 
     // This tx has a medium fee: 10000 satoshis.
     tx.vin[0].prevout.hash = txFirst[1]->GetId();
-    tx.vout[0].nValue = 5000000000LL - 10000;
+    tx.vout[0].nValue = Amount(5000000000LL - 10000);
     uint256 hashMediumFeeTx = tx.GetId();
-    mempool.addUnchecked(
-        hashMediumFeeTx,
-        entry.Fee(10000).Time(GetTime()).SpendsCoinbase(true).FromTx(tx));
+    mempool.addUnchecked(hashMediumFeeTx, entry.Fee(Amount(10000))
+                                              .Time(GetTime())
+                                              .SpendsCoinbase(true)
+                                              .FromTx(tx));
 
     // This tx has a high fee, but depends on the first transaction.
     tx.vin[0].prevout.hash = hashParentTx;
     // 50k satoshi fee.
-    tx.vout[0].nValue = 5000000000LL - 1000 - 50000;
+    tx.vout[0].nValue = Amount(5000000000LL - 1000 - 50000);
     uint256 hashHighFeeTx = tx.GetId();
-    mempool.addUnchecked(
-        hashHighFeeTx,
-        entry.Fee(50000).Time(GetTime()).SpendsCoinbase(false).FromTx(tx));
+    mempool.addUnchecked(hashHighFeeTx, entry.Fee(Amount(50000))
+                                            .Time(GetTime())
+                                            .SpendsCoinbase(false)
+                                            .FromTx(tx));
 
     std::unique_ptr<CBlockTemplate> pblocktemplate =
         BlockAssembler(config, chainparams).CreateNewBlock(scriptPubKey);
@@ -128,17 +134,17 @@ void TestPackageSelection(const CChainParams &chainparams, CScript scriptPubKey,
     // Test that a package below the block min tx fee doesn't get included
     tx.vin[0].prevout.hash = hashHighFeeTx;
     // 0 fee.
-    tx.vout[0].nValue = 5000000000LL - 1000 - 50000;
+    tx.vout[0].nValue = Amount(5000000000LL - 1000 - 50000);
     uint256 hashFreeTx = tx.GetId();
-    mempool.addUnchecked(hashFreeTx, entry.Fee(0).FromTx(tx));
+    mempool.addUnchecked(hashFreeTx, entry.Fee(Amount(0)).FromTx(tx));
     size_t freeTxSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
 
     // Calculate a fee on child transaction that will put the package just
     // below the block min tx fee (assuming 1 child tx of the same size).
-    CAmount feeToUse = blockMinFeeRate.GetFee(2 * freeTxSize) - 1;
+    Amount feeToUse = blockMinFeeRate.GetFee(2 * freeTxSize) - Amount(1);
 
     tx.vin[0].prevout.hash = hashFreeTx;
-    tx.vout[0].nValue = 5000000000LL - 1000 - 50000 - feeToUse;
+    tx.vout[0].nValue = Amount(5000000000LL - 1000 - 50000) - feeToUse;
     uint256 hashLowFeeTx = tx.GetId();
     mempool.addUnchecked(hashLowFeeTx, entry.Fee(feeToUse).FromTx(tx));
     pblocktemplate =
@@ -154,9 +160,10 @@ void TestPackageSelection(const CChainParams &chainparams, CScript scriptPubKey,
     // transaction and replace with a higher fee transaction
     mempool.removeRecursive(tx);
     // Now we should be just over the min relay fee.
-    tx.vout[0].nValue -= 2;
+    tx.vout[0].nValue -= Amount(2);
     hashLowFeeTx = tx.GetId();
-    mempool.addUnchecked(hashLowFeeTx, entry.Fee(feeToUse + 2).FromTx(tx));
+    mempool.addUnchecked(hashLowFeeTx,
+                         entry.Fee(feeToUse + Amount(2)).FromTx(tx));
     pblocktemplate =
         BlockAssembler(config, chainparams).CreateNewBlock(scriptPubKey);
     BOOST_CHECK(pblocktemplate->block.vtx[4]->GetId() == hashFreeTx);
@@ -167,18 +174,18 @@ void TestPackageSelection(const CChainParams &chainparams, CScript scriptPubKey,
     // 0-fee transaction that has 2 outputs.
     tx.vin[0].prevout.hash = txFirst[2]->GetId();
     tx.vout.resize(2);
-    tx.vout[0].nValue = 5000000000LL - 100000000;
+    tx.vout[0].nValue = Amount(5000000000LL - 100000000);
     // 1BCC output.
-    tx.vout[1].nValue = 100000000;
+    tx.vout[1].nValue = Amount(100000000);
     uint256 hashFreeTx2 = tx.GetId();
     mempool.addUnchecked(hashFreeTx2,
-                         entry.Fee(0).SpendsCoinbase(true).FromTx(tx));
+                         entry.Fee(Amount(0)).SpendsCoinbase(true).FromTx(tx));
 
     // This tx can't be mined by itself.
     tx.vin[0].prevout.hash = hashFreeTx2;
     tx.vout.resize(1);
     feeToUse = blockMinFeeRate.GetFee(freeTxSize);
-    tx.vout[0].nValue = 5000000000LL - 100000000 - feeToUse;
+    tx.vout[0].nValue = Amount(5000000000LL) - Amount(100000000) - feeToUse;
     uint256 hashLowFeeTx2 = tx.GetId();
     mempool.addUnchecked(hashLowFeeTx2,
                          entry.Fee(feeToUse).SpendsCoinbase(false).FromTx(tx));
@@ -195,8 +202,8 @@ void TestPackageSelection(const CChainParams &chainparams, CScript scriptPubKey,
     // as well.
     tx.vin[0].prevout.n = 1;
     // 10k satoshi fee.
-    tx.vout[0].nValue = 100000000 - 10000;
-    mempool.addUnchecked(tx.GetId(), entry.Fee(10000).FromTx(tx));
+    tx.vout[0].nValue = Amount(100000000 - 10000);
+    mempool.addUnchecked(tx.GetId(), entry.Fee(Amount(10000)).FromTx(tx));
     pblocktemplate =
         BlockAssembler(config, chainparams).CreateNewBlock(scriptPubKey);
     BOOST_CHECK(pblocktemplate->block.vtx[8]->GetId() == hashLowFeeTx2);
@@ -223,7 +230,7 @@ void TestCoinbaseMessageEB(uint64_t eb, std::string cbmsg) {
     unsigned int extraNonce = 0;
     IncrementExtraNonce(config, pblock, chainActive.Tip(), extraNonce);
     unsigned int nHeight = chainActive.Tip()->nHeight + 1;
-    std::vector<unsigned char> vec(cbmsg.begin(), cbmsg.end());
+    std::vector<uint8_t> vec(cbmsg.begin(), cbmsg.end());
     BOOST_CHECK(pblock->vtx[0]->vin[0].scriptSig ==
                 ((CScript() << nHeight << CScriptNum(extraNonce) << vec) +
                  COINBASE_FLAGS));
@@ -252,7 +259,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     CScript script;
     uint256 hash;
     TestMemPoolEntryHelper entry;
-    entry.nFee = 11;
+    entry.nFee = Amount(11);
     entry.dPriority = 111.0;
     entry.nHeight = 11;
 
@@ -300,10 +307,10 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         pblocktemplate =
             BlockAssembler(config, chainparams).CreateNewBlock(scriptPubKey));
 
-    const CAmount BLOCKSUBSIDY = 50 * COIN;
-    const CAmount LOWFEE = CENT;
-    const CAmount HIGHFEE = COIN;
-    const CAmount HIGHERFEE = 4 * COIN;
+    const Amount BLOCKSUBSIDY = 50 * COIN;
+    const Amount LOWFEE = CENT;
+    const Amount HIGHFEE = COIN;
+    const Amount HIGHERFEE = 4 * COIN;
 
     // block sigops > limit: 1000 CHECKMULTISIG + 1
     tx.vin.resize(1);
@@ -356,7 +363,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     // block size > limit
     tx.vin[0].scriptSig = CScript();
     // 18 * (520char + DROP) + OP_1 = 9433 bytes
-    std::vector<unsigned char> vchData(520);
+    std::vector<uint8_t> vchData(520);
     for (unsigned int i = 0; i < 18; ++i)
         tx.vin[0].scriptSig << vchData << OP_DROP;
     tx.vin[0].scriptSig << OP_1;
@@ -414,7 +421,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     tx.vin.resize(1);
     tx.vin[0].prevout.SetNull();
     tx.vin[0].scriptSig = CScript() << OP_0 << OP_1;
-    tx.vout[0].nValue = 0;
+    tx.vout[0].nValue = Amount(0);
     hash = tx.GetId();
     // Give it a fee so it'll get mined.
     mempool.addUnchecked(
@@ -437,8 +444,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         hash,
         entry.Fee(LOWFEE).Time(GetTime()).SpendsCoinbase(true).FromTx(tx));
     tx.vin[0].prevout.hash = hash;
-    tx.vin[0].scriptSig =
-        CScript() << std::vector<unsigned char>(script.begin(), script.end());
+    tx.vin[0].scriptSig = CScript()
+                          << std::vector<uint8_t>(script.begin(), script.end());
     tx.vout[0].nValue -= LOWFEE;
     hash = tx.GetId();
     mempool.addUnchecked(
@@ -537,8 +544,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         // Locktime passes.
         GlobalConfig config;
         CValidationState state;
-        BOOST_CHECK(ContextualCheckTransactionForCurrentBlock(
-            config, tx, state, chainparams.GetConsensus(), flags));
+        BOOST_CHECK(ContextualCheckTransactionForCurrentBlock(config, tx, state,
+                                                              flags));
     }
 
     // Sequence locks fail.
@@ -564,8 +571,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         // Locktime passes.
         GlobalConfig config;
         CValidationState state;
-        BOOST_CHECK(ContextualCheckTransactionForCurrentBlock(
-            config, tx, state, chainparams.GetConsensus(), flags));
+        BOOST_CHECK(ContextualCheckTransactionForCurrentBlock(config, tx, state,
+                                                              flags));
     }
 
     // Sequence locks fail.
@@ -598,8 +605,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         // Locktime fails.
         GlobalConfig config;
         CValidationState state;
-        BOOST_CHECK(!ContextualCheckTransactionForCurrentBlock(
-            config, tx, state, chainparams.GetConsensus(), flags));
+        BOOST_CHECK(!ContextualCheckTransactionForCurrentBlock(config, tx,
+                                                               state, flags));
         BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-nonfinal");
     }
 
@@ -611,9 +618,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         GlobalConfig config;
         CValidationState state;
         BOOST_CHECK(ContextualCheckTransaction(
-            config, tx, state, chainparams.GetConsensus(),
-            chainActive.Tip()->nHeight + 2,
-            chainActive.Tip()->GetMedianTimePast(),
+            config, tx, state, chainActive.Tip()->nHeight + 2,
             chainActive.Tip()->GetMedianTimePast()));
     }
 
@@ -629,8 +634,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         // Locktime fails.
         GlobalConfig config;
         CValidationState state;
-        BOOST_CHECK(!ContextualCheckTransactionForCurrentBlock(
-            config, tx, state, chainparams.GetConsensus(), flags));
+        BOOST_CHECK(!ContextualCheckTransactionForCurrentBlock(config, tx,
+                                                               state, flags));
         BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-nonfinal");
     }
 
@@ -642,10 +647,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         GlobalConfig config;
         CValidationState state;
         BOOST_CHECK(ContextualCheckTransaction(
-            config, tx, state, chainparams.GetConsensus(),
-            chainActive.Tip()->nHeight + 1,
-            chainActive.Tip()->GetMedianTimePast() + 1,
-            chainActive.Tip()->GetMedianTimePast()));
+            config, tx, state, chainActive.Tip()->nHeight + 1,
+            chainActive.Tip()->GetMedianTimePast() + 1));
     }
 
     // mempool-dependent transactions (not added)
@@ -658,8 +661,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         // Locktime passes.
         GlobalConfig config;
         CValidationState state;
-        BOOST_CHECK(ContextualCheckTransactionForCurrentBlock(
-            config, tx, state, chainparams.GetConsensus(), flags));
+        BOOST_CHECK(ContextualCheckTransactionForCurrentBlock(config, tx, state,
+                                                              flags));
     }
 
     // Sequence locks pass.
@@ -682,7 +685,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     // into the template because we still check IsFinalTx in CreateNewBlock, but
     // relative locked txs will if inconsistently added to mempool. For now
     // these will still generate a valid template until BIP68 soft fork.
-    BOOST_CHECK_EQUAL(pblocktemplate->block.vtx.size(), 3);
+    BOOST_CHECK_EQUAL(pblocktemplate->block.vtx.size(), 3UL);
     // However if we advance height by 1 and time by 512, all of them should be
     // mined.
     for (int i = 0; i < CBlockIndex::nMedianTimeSpan; i++) {
@@ -696,7 +699,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     BOOST_CHECK(
         pblocktemplate =
             BlockAssembler(config, chainparams).CreateNewBlock(scriptPubKey));
-    BOOST_CHECK_EQUAL(pblocktemplate->block.vtx.size(), 5);
+    BOOST_CHECK_EQUAL(pblocktemplate->block.vtx.size(), 5UL);
 
     chainActive.Tip()->nHeight--;
     SetMockTime(0);
@@ -721,51 +724,17 @@ BOOST_AUTO_TEST_CASE(BlockAssembler_construction) {
     GlobalConfig config;
     const CChainParams &chainparams = Params();
 
-    // The maximum block size to be generated before the UAHF
-    static const auto LEGACY_CAP = LEGACY_MAX_BLOCK_SIZE - 1000;
-
     // We are working on a fake chain and need to protect ourselves.
     LOCK(cs_main);
 
-    // Check before UAHF activation.
-    BOOST_CHECK(!IsUAHFenabledForCurrentBlock(config));
-
-    // Test around the historical 1MB cap
-    config.SetMaxBlockSize(ONE_MEGABYTE);
-    CheckBlockMaxSize(chainparams, 0, 1000);
-    CheckBlockMaxSize(chainparams, 1000, 1000);
-    CheckBlockMaxSize(chainparams, 1001, 1001);
-    CheckBlockMaxSize(chainparams, 12345, 12345);
-
-    CheckBlockMaxSize(chainparams, ONE_MEGABYTE - 1001, ONE_MEGABYTE - 1001);
-    CheckBlockMaxSize(chainparams, ONE_MEGABYTE - 1000, ONE_MEGABYTE - 1000);
-    CheckBlockMaxSize(chainparams, ONE_MEGABYTE - 999, LEGACY_CAP);
-    CheckBlockMaxSize(chainparams, ONE_MEGABYTE, LEGACY_CAP);
-
-    // Test around higher limit, the block size should still cap at LEGACY_CAP.
-    static const auto EIGHT_MEGABYTES = 8 * ONE_MEGABYTE;
-    config.SetMaxBlockSize(EIGHT_MEGABYTES);
-    CheckBlockMaxSize(chainparams, EIGHT_MEGABYTES - 1001, LEGACY_CAP);
-    CheckBlockMaxSize(chainparams, EIGHT_MEGABYTES - 1000, LEGACY_CAP);
-    CheckBlockMaxSize(chainparams, EIGHT_MEGABYTES - 999, LEGACY_CAP);
-    CheckBlockMaxSize(chainparams, EIGHT_MEGABYTES, LEGACY_CAP);
-
-    // Before the UAHF, the default generated block size is the LEGACY_CAP.
-    {
-        ClearArg("-blockmaxsize");
-        BlockAssembler ba(config, chainparams);
-        BOOST_CHECK_EQUAL(ba.GetMaxGeneratedBlockSize(), LEGACY_CAP);
-    }
-
-    // Activate UAHF
-    const int64_t hfStartTime = config.GetUAHFStartTime();
+    // Activate UAHF the dirty way
+    const int64_t uahfHeight =
+        config.GetChainParams().GetConsensus().uahfHeight;
     auto pindex = chainActive.Tip();
     for (size_t i = 0; pindex && i < 5; i++) {
-        pindex->nTime = hfStartTime;
+        pindex->nHeight = uahfHeight + 5 - i;
         pindex = pindex->pprev;
     }
-
-    BOOST_CHECK(IsUAHFenabledForCurrentBlock(config));
 
     // Test around historical 1MB (plus one byte because that's mandatory)
     config.SetMaxBlockSize(ONE_MEGABYTE + 1);
@@ -780,6 +749,7 @@ BOOST_AUTO_TEST_CASE(BlockAssembler_construction) {
     CheckBlockMaxSize(chainparams, ONE_MEGABYTE, ONE_MEGABYTE - 999);
 
     // Test around higher limit such as 8MB
+    static const auto EIGHT_MEGABYTES = 8 * ONE_MEGABYTE;
     config.SetMaxBlockSize(EIGHT_MEGABYTES);
     CheckBlockMaxSize(chainparams, EIGHT_MEGABYTES - 1001,
                       EIGHT_MEGABYTES - 1001);

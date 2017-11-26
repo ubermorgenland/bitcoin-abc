@@ -60,7 +60,7 @@ BOOST_AUTO_TEST_CASE(connect_utxo_extblock) {
     tx.vin.resize(1);
     tx.vin[0].scriptSig.resize(10);
     tx.vout.resize(1);
-    tx.vout[0].nValue = 42;
+    tx.vout[0].nValue = Amount(42);
     auto coinbaseTx = CTransaction(tx);
 
     block.vtx.resize(2);
@@ -74,8 +74,7 @@ BOOST_AUTO_TEST_CASE(connect_utxo_extblock) {
     tx.nVersion = 2;
 
     auto prevTx0 = CTransaction(tx);
-    view.ModifyNewCoins(prevTx0.GetId(), prevTx0.IsCoinBase())
-        ->FromTx(prevTx0, 100);
+    AddCoins(view, prevTx0, 100);
 
     tx.vin[0].prevout.hash = prevTx0.GetId();
     auto tx0 = CTransaction(tx);

@@ -18,7 +18,8 @@
 #include <cstdint>
 #include <string>
 
-/** Message header.
+/**
+ * Message header.
  * (4) message start.
  * (12) command.
  * (4) size.
@@ -37,14 +38,14 @@ public:
         HEADER_SIZE = MESSAGE_START_SIZE + COMMAND_SIZE + MESSAGE_SIZE_SIZE +
                       CHECKSUM_SIZE
     };
-    typedef unsigned char MessageStartChars[MESSAGE_START_SIZE];
+    typedef uint8_t MessageMagic[MESSAGE_START_SIZE];
 
-    CMessageHeader(const MessageStartChars &pchMessageStartIn);
-    CMessageHeader(const MessageStartChars &pchMessageStartIn,
+    CMessageHeader(const MessageMagic &pchMessageStartIn);
+    CMessageHeader(const MessageMagic &pchMessageStartIn,
                    const char *pszCommand, unsigned int nMessageSizeIn);
 
     std::string GetCommand() const;
-    bool IsValid(const MessageStartChars &messageStart) const;
+    bool IsValid(const MessageMagic &messageStart) const;
 
     ADD_SERIALIZE_METHODS;
 
@@ -250,17 +251,16 @@ enum ServiceFlags : uint64_t {
     // Nothing
     NODE_NONE = 0,
     // NODE_NETWORK means that the node is capable of serving the block chain.
-    // It is currently set by all Bitcoin Core nodes, and is unset by SPV
-    // clients or other peers that just want network services but don't provide
-    // them.
+    // It is currently set by all Bitcoin ABC nodes, and is unset by SPV clients
+    // or other peers that just want network services but don't provide them.
     NODE_NETWORK = (1 << 0),
     // NODE_GETUTXO means the node is capable of responding to the getutxo
-    // protocol request. Bitcoin Core does not support this but a patch set
+    // protocol request. Bitcoin ABC does not support this but a patch set
     // called Bitcoin XT does. See BIP 64 for details on how this is
     // implemented.
     NODE_GETUTXO = (1 << 1),
     // NODE_BLOOM means the node is capable and willing to handle bloom-filtered
-    // connections. Bitcoin Core nodes used to support this by default, without
+    // connections. Bitcoin ABC nodes used to support this by default, without
     // advertising this bit, but no longer do as of protocol version 70011 (=
     // NO_BLOOM_VERSION)
     NODE_BLOOM = (1 << 2),

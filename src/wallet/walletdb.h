@@ -125,7 +125,7 @@ public:
     bool WriteKey(const CPubKey &vchPubKey, const CPrivKey &vchPrivKey,
                   const CKeyMetadata &keyMeta);
     bool WriteCryptedKey(const CPubKey &vchPubKey,
-                         const std::vector<unsigned char> &vchCryptedSecret,
+                         const std::vector<uint8_t> &vchCryptedSecret,
                          const CKeyMetadata &keyMeta);
     bool WriteMasterKey(unsigned int nID, const CMasterKey &kMasterKey);
 
@@ -162,7 +162,7 @@ public:
     /// Erase destination data tuple from wallet database.
     bool EraseDestData(const std::string &address, const std::string &key);
 
-    CAmount GetAccountCreditDebit(const std::string &strAccount);
+    Amount GetAccountCreditDebit(const std::string &strAccount);
     void ListAccountCreditDebit(const std::string &strAccount,
                                 std::list<CAccountingEntry> &acentries);
 

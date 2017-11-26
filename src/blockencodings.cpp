@@ -33,8 +33,7 @@ void CBlockHeaderAndShortTxIDs::FillShortTxIDSelector() const {
     CDataStream stream(SER_NETWORK, PROTOCOL_VERSION);
     stream << header << nonce;
     CSHA256 hasher;
-    hasher.Write((unsigned char *)&(*stream.begin()),
-                 stream.end() - stream.begin());
+    hasher.Write((uint8_t *)&(*stream.begin()), stream.end() - stream.begin());
     uint256 shorttxidhash;
     hasher.Finalize(shorttxidhash.begin());
     shorttxidk0 = shorttxidhash.GetUint64(0);
@@ -218,7 +217,7 @@ ReadStatus PartiallyDownloadedBlock::FillBlock(
     if (vtx_missing.size() != tx_missing_offset) return READ_STATUS_INVALID;
 
     CValidationState state;
-    if (!CheckBlock(*config, block, state, Params().GetConsensus())) {
+    if (!CheckBlock(*config, block, state)) {
         // TODO: We really want to just check merkle tree manually here, but
         // that is expensive, and CheckBlock caches a block's "checked-status"
         // (in the CBlock?). CBlock should be able to check its own merkle root

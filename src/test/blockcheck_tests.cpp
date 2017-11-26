@@ -17,8 +17,7 @@ BOOST_FIXTURE_TEST_SUITE(blockcheck_tests, BasicTestingSetup)
 static void RunCheckOnBlockImpl(const GlobalConfig &config, const CBlock &block,
                                 CValidationState &state, bool expected) {
     block.fChecked = false;
-    const Consensus::Params &params = config.GetChainParams().GetConsensus();
-    bool fValid = CheckBlock(config, block, state, params, false, false);
+    bool fValid = CheckBlock(config, block, state, false, false);
 
     BOOST_CHECK_EQUAL(fValid, expected);
     BOOST_CHECK_EQUAL(fValid, state.IsValid());
@@ -54,7 +53,7 @@ BOOST_AUTO_TEST_CASE(blockfail) {
     tx.vin.resize(1);
     tx.vin[0].scriptSig.resize(10);
     tx.vout.resize(1);
-    tx.vout[0].nValue = 42;
+    tx.vout[0].nValue = Amount(42);
     auto coinbaseTx = CTransaction(tx);
 
     block.vtx.resize(1);

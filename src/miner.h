@@ -22,15 +22,11 @@ class CReserveKey;
 class CScript;
 class CWallet;
 
-namespace Consensus {
-struct Params;
-};
-
 static const bool DEFAULT_PRINTPRIORITY = false;
 
 struct CBlockTemplate {
     CBlock block;
-    std::vector<CAmount> vTxFees;
+    std::vector<Amount> vTxFees;
     std::vector<int64_t> vTxSigOpsCount;
 };
 
@@ -46,7 +42,7 @@ struct CTxMemPoolModifiedEntry {
 
     CTxMemPool::txiter iter;
     uint64_t nSizeWithAncestors;
-    CAmount nModFeesWithAncestors;
+    Amount nModFeesWithAncestors;
     int64_t nSigOpCountWithAncestors;
 };
 
@@ -76,8 +72,10 @@ struct modifiedentry_iter {
 struct CompareModifiedEntry {
     bool operator()(const CTxMemPoolModifiedEntry &a,
                     const CTxMemPoolModifiedEntry &b) {
-        double f1 = (double)a.nModFeesWithAncestors * b.nSizeWithAncestors;
-        double f2 = (double)b.nModFeesWithAncestors * a.nSizeWithAncestors;
+        double f1 = double(b.nSizeWithAncestors *
+                           a.nModFeesWithAncestors.GetSatoshis());
+        double f2 = double(a.nSizeWithAncestors *
+                           b.nModFeesWithAncestors.GetSatoshis());
         if (f1 == f2) {
             return CTxMemPool::CompareIteratorByHash()(a.iter, b.iter);
         }
@@ -142,12 +140,11 @@ private:
     uint64_t nBlockSize;
     uint64_t nBlockTx;
     uint64_t nBlockSigOps;
-    CAmount nFees;
+    Amount nFees;
     CTxMemPool::setEntries inBlock;
 
     // Chain context for the block
     int nHeight;
-    int64_t nMedianTimePast;
     int64_t nLockTimeCutoff;
     const CChainParams &chainparams;
 
@@ -216,7 +213,6 @@ private:
 void IncrementExtraNonce(const Config &config, CBlock *pblock,
                          const CBlockIndex *pindexPrev,
                          unsigned int &nExtraNonce);
-int64_t UpdateTime(CBlockHeader *pblock,
-                   const Consensus::Params &consensusParams,
+int64_t UpdateTime(CBlockHeader *pblock, const Config &config,
                    const CBlockIndex *pindexPrev);
 #endif // BITCOIN_MINER_H

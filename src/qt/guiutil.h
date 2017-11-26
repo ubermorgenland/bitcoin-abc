@@ -20,6 +20,8 @@
 
 class QValidatedLineEdit;
 class SendCoinsRecipient;
+class CChainParams;
+class Config;
 
 QT_BEGIN_NAMESPACE
 class QAbstractItemView;
@@ -33,6 +35,8 @@ QT_END_NAMESPACE
 /** Utility functions used by the Bitcoin Qt UI.
  */
 namespace GUIUtil {
+extern const QString URI_SCHEME;
+
 // Create human-readable string from date
 QString dateTimeStr(const QDateTime &datetime);
 QString dateTimeStr(qint64 nTime);
@@ -40,11 +44,15 @@ QString dateTimeStr(qint64 nTime);
 // Return a monospace font
 QFont fixedPitchFont();
 
+// Generate an invalid, but convincing address.
+std::string DummyAddress(const CChainParams &params, const Config &cfg);
+
 // Set up widgets for address and amounts
 void setupAddressWidget(QValidatedLineEdit *widget, QWidget *parent);
 void setupAmountWidget(QLineEdit *widget, QWidget *parent);
 
-// Parse "bitcoin:" URI into recipient object, return true on successful parsing
+// Parse "bitcoincash:" URI into recipient object, return true on successful
+// parsing
 bool parseBitcoinURI(const QUrl &uri, SendCoinsRecipient *out);
 bool parseBitcoinURI(QString uri, SendCoinsRecipient *out);
 QString formatBitcoinURI(const SendCoinsRecipient &info);

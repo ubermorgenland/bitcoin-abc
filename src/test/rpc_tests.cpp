@@ -12,7 +12,6 @@
 #include "test/test_bitcoin.h"
 
 #include <boost/algorithm/string.hpp>
-#include <boost/assign/list_of.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include <univalue.h>
@@ -88,9 +87,9 @@ BOOST_AUTO_TEST_CASE(rpc_rawparams) {
     BOOST_CHECK_THROW(CallRPC("signrawtransaction ff00"), std::runtime_error);
     BOOST_CHECK_NO_THROW(CallRPC(std::string("signrawtransaction ") + rawtx));
     BOOST_CHECK_NO_THROW(CallRPC(std::string("signrawtransaction ") + rawtx +
-                                 " null null NONE|ANYONECANPAY"));
+                                 " null null NONE|FORKID|ANYONECANPAY"));
     BOOST_CHECK_NO_THROW(CallRPC(std::string("signrawtransaction ") + rawtx +
-                                 " [] [] NONE|ANYONECANPAY"));
+                                 " [] [] NONE|FORKID|ANYONECANPAY"));
     BOOST_CHECK_THROW(CallRPC(std::string("signrawtransaction ") + rawtx +
                               " null null badenum"),
                       std::runtime_error);
@@ -135,6 +134,7 @@ BOOST_AUTO_TEST_CASE(rpc_rawsign) {
                           "8f50977c8493f3\","
                           "\"vout\":1,\"scriptPubKey\":"
                           "\"a914b10c9df5f7edf436c697f02f1efdba4cf399615187\","
+                          "\"amount\":3.14159,"
                           "\"redeemScript\":"
                           "\"512103debedc17b3df2badbcdd86d5feb4562b86fe182e5998"
                           "abd8bcd4f122c6155b1b21027e940bb73ab8732bfdf7f9216ece"
@@ -152,6 +152,45 @@ BOOST_AUTO_TEST_CASE(rpc_rawsign) {
     r = CallRPC(std::string("signrawtransaction ") + notsigned + " " + prevout +
                 " " + "[" + privkey1 + "," + privkey2 + "]");
     BOOST_CHECK(find_value(r.get_obj(), "complete").get_bool() == true);
+}
+
+BOOST_AUTO_TEST_CASE(rpc_rawsign_missing_amount) {
+    // Old format, missing amount parameter for prevout should generate
+    // an RPC error.  This is because of new replay-protected tx's require
+    // nonzero amount present in signed tx.
+    // See: https://github.com/Bitcoin-ABC/bitcoin-abc/issues/63
+    // (We will re-use the tx + keys from the above rpc_rawsign test for
+    // simplicity.)
+    UniValue r;
+    std::string prevout = "[{\"txid\":"
+                          "\"b4cc287e58f87cdae59417329f710f3ecd75a4ee1d2872b724"
+                          "8f50977c8493f3\","
+                          "\"vout\":1,\"scriptPubKey\":"
+                          "\"a914b10c9df5f7edf436c697f02f1efdba4cf399615187\","
+                          "\"redeemScript\":"
+                          "\"512103debedc17b3df2badbcdd86d5feb4562b86fe182e5998"
+                          "abd8bcd4f122c6155b1b21027e940bb73ab8732bfdf7f9216ece"
+                          "fca5b94d6df834e77e108f68e66f126044c052ae\"}]";
+    r = CallRPC(std::string("createrawtransaction ") + prevout + " " +
+                "{\"3HqAe9LtNBjnsfM4CyYaWTnvCaUYT7v4oZ\":11}");
+    std::string notsigned = r.get_str();
+    std::string privkey1 =
+        "\"KzsXybp9jX64P5ekX1KUxRQ79Jht9uzW7LorgwE65i5rWACL6LQe\"";
+    std::string privkey2 =
+        "\"Kyhdf5LuKTRx4ge69ybABsiUAWjVRK4XGxAKk2FQLp2HjGMy87Z4\"";
+    bool exceptionThrownDueToMissingAmount = false,
+         errorWasMissingAmount = false;
+    try {
+        r = CallRPC(std::string("signrawtransaction ") + notsigned + " " +
+                    prevout + " " + "[" + privkey1 + "," + privkey2 + "]");
+    } catch (const std::runtime_error &e) {
+        exceptionThrownDueToMissingAmount = true;
+        if (std::string(e.what()).find("amount") != std::string::npos) {
+            errorWasMissingAmount = true;
+        }
+    }
+    BOOST_CHECK(exceptionThrownDueToMissingAmount == true);
+    BOOST_CHECK(errorWasMissingAmount == true);
 }
 
 BOOST_AUTO_TEST_CASE(rpc_createraw_op_return) {
@@ -204,35 +243,35 @@ BOOST_AUTO_TEST_CASE(rpc_createraw_op_return) {
 }
 
 BOOST_AUTO_TEST_CASE(rpc_format_monetary_values) {
-    BOOST_CHECK(ValueFromAmount(0LL).write() == "0.00000000");
-    BOOST_CHECK(ValueFromAmount(1LL).write() == "0.00000001");
-    BOOST_CHECK(ValueFromAmount(17622195LL).write() == "0.17622195");
-    BOOST_CHECK(ValueFromAmount(50000000LL).write() == "0.50000000");
-    BOOST_CHECK(ValueFromAmount(89898989LL).write() == "0.89898989");
-    BOOST_CHECK(ValueFromAmount(100000000LL).write() == "1.00000000");
-    BOOST_CHECK(ValueFromAmount(2099999999999990LL).write() ==
+    BOOST_CHECK(ValueFromAmount(Amount(0LL)).write() == "0.00000000");
+    BOOST_CHECK(ValueFromAmount(Amount(1LL)).write() == "0.00000001");
+    BOOST_CHECK(ValueFromAmount(Amount(17622195LL)).write() == "0.17622195");
+    BOOST_CHECK(ValueFromAmount(Amount(50000000LL)).write() == "0.50000000");
+    BOOST_CHECK(ValueFromAmount(Amount(89898989LL)).write() == "0.89898989");
+    BOOST_CHECK(ValueFromAmount(Amount(100000000LL)).write() == "1.00000000");
+    BOOST_CHECK(ValueFromAmount(Amount(2099999999999990LL)).write() ==
                 "20999999.99999990");
-    BOOST_CHECK(ValueFromAmount(2099999999999999LL).write() ==
+    BOOST_CHECK(ValueFromAmount(Amount(2099999999999999LL)).write() ==
                 "20999999.99999999");
 
-    BOOST_CHECK_EQUAL(ValueFromAmount(0).write(), "0.00000000");
-    BOOST_CHECK_EQUAL(ValueFromAmount((COIN / 10000) * 123456789).write(),
+    BOOST_CHECK_EQUAL(ValueFromAmount(Amount(0)).write(), "0.00000000");
+    BOOST_CHECK_EQUAL(ValueFromAmount(123456789 * (COIN / 10000)).write(),
                       "12345.67890000");
-    BOOST_CHECK_EQUAL(ValueFromAmount(-COIN).write(), "-1.00000000");
-    BOOST_CHECK_EQUAL(ValueFromAmount(-COIN / 10).write(), "-0.10000000");
+    BOOST_CHECK_EQUAL(ValueFromAmount(-1 * COIN).write(), "-1.00000000");
+    BOOST_CHECK_EQUAL(ValueFromAmount(-1 * COIN / 10).write(), "-0.10000000");
 
-    BOOST_CHECK_EQUAL(ValueFromAmount(COIN * 100000000).write(),
+    BOOST_CHECK_EQUAL(ValueFromAmount(100000000 * COIN).write(),
                       "100000000.00000000");
-    BOOST_CHECK_EQUAL(ValueFromAmount(COIN * 10000000).write(),
+    BOOST_CHECK_EQUAL(ValueFromAmount(10000000 * COIN).write(),
                       "10000000.00000000");
-    BOOST_CHECK_EQUAL(ValueFromAmount(COIN * 1000000).write(),
+    BOOST_CHECK_EQUAL(ValueFromAmount(1000000 * COIN).write(),
                       "1000000.00000000");
-    BOOST_CHECK_EQUAL(ValueFromAmount(COIN * 100000).write(),
+    BOOST_CHECK_EQUAL(ValueFromAmount(100000 * COIN).write(),
                       "100000.00000000");
-    BOOST_CHECK_EQUAL(ValueFromAmount(COIN * 10000).write(), "10000.00000000");
-    BOOST_CHECK_EQUAL(ValueFromAmount(COIN * 1000).write(), "1000.00000000");
-    BOOST_CHECK_EQUAL(ValueFromAmount(COIN * 100).write(), "100.00000000");
-    BOOST_CHECK_EQUAL(ValueFromAmount(COIN * 10).write(), "10.00000000");
+    BOOST_CHECK_EQUAL(ValueFromAmount(10000 * COIN).write(), "10000.00000000");
+    BOOST_CHECK_EQUAL(ValueFromAmount(1000 * COIN).write(), "1000.00000000");
+    BOOST_CHECK_EQUAL(ValueFromAmount(100 * COIN).write(), "100.00000000");
+    BOOST_CHECK_EQUAL(ValueFromAmount(10 * COIN).write(), "10.00000000");
     BOOST_CHECK_EQUAL(ValueFromAmount(COIN).write(), "1.00000000");
     BOOST_CHECK_EQUAL(ValueFromAmount(COIN / 10).write(), "0.10000000");
     BOOST_CHECK_EQUAL(ValueFromAmount(COIN / 100).write(), "0.01000000");
@@ -253,22 +292,25 @@ static UniValue ValueFromString(const std::string &str) {
 BOOST_AUTO_TEST_CASE(rpc_parse_monetary_values) {
     BOOST_CHECK_THROW(AmountFromValue(ValueFromString("-0.00000001")),
                       UniValue);
-    BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("0")), 0LL);
-    BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("0.00000000")), 0LL);
-    BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("0.00000001")), 1LL);
+    BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("0")), Amount(0LL));
+    BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("0.00000000")),
+                      Amount(0LL));
+    BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("0.00000001")),
+                      Amount(1LL));
     BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("0.17622195")),
-                      17622195LL);
-    BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("0.5")), 50000000LL);
+                      Amount(17622195LL));
+    BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("0.5")),
+                      Amount(50000000LL));
     BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("0.50000000")),
-                      50000000LL);
+                      Amount(50000000LL));
     BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("0.89898989")),
-                      89898989LL);
+                      Amount(89898989LL));
     BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("1.00000000")),
-                      100000000LL);
+                      Amount(100000000LL));
     BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("20999999.9999999")),
-                      2099999999999990LL);
+                      Amount(2099999999999990LL));
     BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("20999999.99999999")),
-                      2099999999999999LL);
+                      Amount(2099999999999999LL));
 
     BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("1e-8")),
                       COIN / 100000000);
@@ -299,11 +341,11 @@ BOOST_AUTO_TEST_CASE(rpc_parse_monetary_values) {
                       UniValue);
     // should pass, cut trailing 0
     BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("0.00000001000000")),
-                      1LL);
+                      Amount(1LL));
     // should fail
     BOOST_CHECK_THROW(AmountFromValue(ValueFromString("19e-9")), UniValue);
     // should pass, leading 0 is present
-    BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("0.19e-6")), 19);
+    BOOST_CHECK_EQUAL(AmountFromValue(ValueFromString("0.19e-6")), Amount(19));
 
     // overflow error
     BOOST_CHECK_THROW(AmountFromValue(ValueFromString("92233720368.54775808")),
@@ -328,14 +370,14 @@ BOOST_AUTO_TEST_CASE(json_parse_errors) {
                       std::runtime_error);
     BOOST_CHECK_EQUAL(AmountFromValue(ParseNonRFCJSONValue(
                           "0.00000000000000000000000000000000000001e+30 ")),
-                      1);
+                      Amount(1));
     // Invalid, initial garbage
     BOOST_CHECK_THROW(ParseNonRFCJSONValue("[1.0"), std::runtime_error);
     BOOST_CHECK_THROW(ParseNonRFCJSONValue("a1.0"), std::runtime_error);
     // Invalid, trailing garbage
     BOOST_CHECK_THROW(ParseNonRFCJSONValue("1.0sds"), std::runtime_error);
     BOOST_CHECK_THROW(ParseNonRFCJSONValue("1.0]"), std::runtime_error);
-    // BCC addresses should fail parsing
+    // BCH addresses should fail parsing
     BOOST_CHECK_THROW(
         ParseNonRFCJSONValue("175tWpb8K1S7NmH4Zx6rewF9WQrcZv245W"),
         std::runtime_error);
@@ -359,7 +401,7 @@ BOOST_AUTO_TEST_CASE(rpc_ban) {
     BOOST_CHECK_NO_THROW(CallRPC(std::string("setban 127.0.0.0 remove")));
     BOOST_CHECK_NO_THROW(r = CallRPC(std::string("listbanned")));
     ar = r.get_array();
-    BOOST_CHECK_EQUAL(ar.size(), 0);
+    BOOST_CHECK_EQUAL(ar.size(), 0UL);
 
     BOOST_CHECK_NO_THROW(
         r = CallRPC(std::string("setban 127.0.0.0/24 add 1607731200 true")));
@@ -394,7 +436,7 @@ BOOST_AUTO_TEST_CASE(rpc_ban) {
     BOOST_CHECK_NO_THROW(CallRPC(std::string("setban 127.0.0.0/24 remove")));
     BOOST_CHECK_NO_THROW(r = CallRPC(std::string("listbanned")));
     ar = r.get_array();
-    BOOST_CHECK_EQUAL(ar.size(), 0);
+    BOOST_CHECK_EQUAL(ar.size(), 0UL);
 
     BOOST_CHECK_NO_THROW(
         r = CallRPC(std::string("setban 127.0.0.0/255.255.0.0 add")));
@@ -404,7 +446,7 @@ BOOST_AUTO_TEST_CASE(rpc_ban) {
     BOOST_CHECK_NO_THROW(CallRPC(std::string("clearbanned")));
     BOOST_CHECK_NO_THROW(r = CallRPC(std::string("listbanned")));
     ar = r.get_array();
-    BOOST_CHECK_EQUAL(ar.size(), 0);
+    BOOST_CHECK_EQUAL(ar.size(), 0UL);
 
     // invalid IP
     BOOST_CHECK_THROW(r = CallRPC(std::string("setban test add")),
@@ -444,26 +486,23 @@ BOOST_AUTO_TEST_CASE(rpc_ban) {
 BOOST_AUTO_TEST_CASE(rpc_convert_values_generatetoaddress) {
     UniValue result;
 
-    BOOST_CHECK_NO_THROW(
-        result = RPCConvertValues("generatetoaddress",
-                                  boost::assign::list_of("101")(
-                                      "mkESjLZW66TmHhiFX8MCaBjrhZ543PPh9a")));
+    BOOST_CHECK_NO_THROW(result = RPCConvertValues(
+                             "generatetoaddress",
+                             {"101", "mkESjLZW66TmHhiFX8MCaBjrhZ543PPh9a"}));
     BOOST_CHECK_EQUAL(result[0].get_int(), 101);
     BOOST_CHECK_EQUAL(result[1].get_str(),
                       "mkESjLZW66TmHhiFX8MCaBjrhZ543PPh9a");
 
-    BOOST_CHECK_NO_THROW(
-        result = RPCConvertValues("generatetoaddress",
-                                  boost::assign::list_of("101")(
-                                      "mhMbmE2tE9xzJYCV9aNC8jKWN31vtGrguU")));
+    BOOST_CHECK_NO_THROW(result = RPCConvertValues(
+                             "generatetoaddress",
+                             {"101", "mhMbmE2tE9xzJYCV9aNC8jKWN31vtGrguU"}));
     BOOST_CHECK_EQUAL(result[0].get_int(), 101);
     BOOST_CHECK_EQUAL(result[1].get_str(),
                       "mhMbmE2tE9xzJYCV9aNC8jKWN31vtGrguU");
 
     BOOST_CHECK_NO_THROW(result = RPCConvertValues(
                              "generatetoaddress",
-                             boost::assign::list_of("1")(
-                                 "mkESjLZW66TmHhiFX8MCaBjrhZ543PPh9a")("9")));
+                             {"1", "mkESjLZW66TmHhiFX8MCaBjrhZ543PPh9a", "9"}));
     BOOST_CHECK_EQUAL(result[0].get_int(), 1);
     BOOST_CHECK_EQUAL(result[1].get_str(),
                       "mkESjLZW66TmHhiFX8MCaBjrhZ543PPh9a");
@@ -471,8 +510,7 @@ BOOST_AUTO_TEST_CASE(rpc_convert_values_generatetoaddress) {
 
     BOOST_CHECK_NO_THROW(result = RPCConvertValues(
                              "generatetoaddress",
-                             boost::assign::list_of("1")(
-                                 "mhMbmE2tE9xzJYCV9aNC8jKWN31vtGrguU")("9")));
+                             {"1", "mhMbmE2tE9xzJYCV9aNC8jKWN31vtGrguU", "9"}));
     BOOST_CHECK_EQUAL(result[0].get_int(), 1);
     BOOST_CHECK_EQUAL(result[1].get_str(),
                       "mhMbmE2tE9xzJYCV9aNC8jKWN31vtGrguU");

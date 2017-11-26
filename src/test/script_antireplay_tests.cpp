@@ -18,7 +18,7 @@
 BOOST_FIXTURE_TEST_SUITE(script_antireplay_tests, BasicTestingSetup)
 
 BOOST_AUTO_TEST_CASE(test_is_commitment) {
-    std::vector<unsigned char> data{};
+    std::vector<uint8_t> data{};
 
     // Empty commitment.
     auto s = CScript() << OP_RETURN << data;
@@ -42,7 +42,7 @@ BOOST_AUTO_TEST_CASE(test_is_commitment) {
 
     // Commitment to a larger value.
     std::string str = "Bitcoin: A peer-to-peer Electronic Cash System";
-    data = std::vector<unsigned char>(str.begin(), str.end());
+    data = std::vector<uint8_t>(str.begin(), str.end());
     BOOST_CHECK(!s.IsCommitment(data));
 
     s = CScript() << OP_RETURN << data;
@@ -71,10 +71,12 @@ BOOST_AUTO_TEST_CASE(test_antireplay) {
     GlobalConfig config;
     const Consensus::Params &params = config.GetChainParams().GetConsensus();
 
-    // The anti replay rule start at hfStartTime and stops at
+    // The anti replay rule start at uahfHeight and stops at
     // antiReplayOpReturnSunsetHeight.
+    const int nUAHFHeight = params.uahfHeight;
     const int nSunsetHeight = params.antiReplayOpReturnSunsetHeight;
-    const int64_t nUAHFStartTime = config.GetUAHFStartTime();
+
+    const int64_t nUAHFStartTime = 123456;
 
     CMutableTransaction tx;
     tx.nVersion = 1;
@@ -83,31 +85,28 @@ BOOST_AUTO_TEST_CASE(test_antireplay) {
     tx.vin[0].prevout.n = 0;
     tx.vin[0].scriptSig = CScript();
     tx.vout.resize(1);
-    tx.vout[0].nValue = 1;
+    tx.vout[0].nValue = Amount(1);
     tx.vout[0].scriptPubKey = CScript();
 
     {
         // Base transaction is valid.
         CValidationState state;
-        BOOST_CHECK(ContextualCheckTransaction(config, tx, state, params,
-                                               nSunsetHeight, nUAHFStartTime,
+        BOOST_CHECK(ContextualCheckTransaction(config, tx, state, nSunsetHeight,
                                                nUAHFStartTime));
     }
 
     {
         // Base transaction is still valid after sunset.
         CValidationState state;
-        BOOST_CHECK(ContextualCheckTransaction(config, tx, state, params,
-                                               nSunsetHeight + 1,
-                                               nUAHFStartTime, nUAHFStartTime));
+        BOOST_CHECK(ContextualCheckTransaction(
+            config, tx, state, nSunsetHeight + 1, nUAHFStartTime));
     }
 
     {
         // Base transaction is valid before the fork.
         CValidationState state;
-        BOOST_CHECK(
-            ContextualCheckTransaction(config, tx, state, params, nSunsetHeight,
-                                       nUAHFStartTime - 1, nUAHFStartTime - 1));
+        BOOST_CHECK(ContextualCheckTransaction(
+            config, tx, state, nUAHFHeight - 1, nUAHFStartTime - 1));
     }
 
     tx.vout[0].scriptPubKey = CScript() << OP_RETURN << OP_0;
@@ -115,8 +114,7 @@ BOOST_AUTO_TEST_CASE(test_antireplay) {
     {
         // Wrong commitment, still valid.
         CValidationState state;
-        BOOST_CHECK(ContextualCheckTransaction(config, tx, state, params,
-                                               nSunsetHeight, nUAHFStartTime,
+        BOOST_CHECK(ContextualCheckTransaction(config, tx, state, nSunsetHeight,
                                                nUAHFStartTime));
     }
 
@@ -126,26 +124,31 @@ BOOST_AUTO_TEST_CASE(test_antireplay) {
     {
         // Anti replay commitment, not valid anymore.
         CValidationState state;
-        BOOST_CHECK(!ContextualCheckTransaction(config, tx, state, params,
-                                                nSunsetHeight, nUAHFStartTime,
+        BOOST_CHECK(!ContextualCheckTransaction(config, tx, state, nUAHFHeight,
                                                 nUAHFStartTime));
+        BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txn-replay");
+    }
+
+    {
+        // Anti replay commitment, not valid anymore.
+        CValidationState state;
+        BOOST_CHECK(!ContextualCheckTransaction(config, tx, state,
+                                                nSunsetHeight, nUAHFStartTime));
         BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txn-replay");
     }
 
     {
         // Anti replay commitment, disabled before start time.
         CValidationState state;
-        BOOST_CHECK(
-            ContextualCheckTransaction(config, tx, state, params, nSunsetHeight,
-                                       nUAHFStartTime - 1, nUAHFStartTime - 1));
+        BOOST_CHECK(ContextualCheckTransaction(
+            config, tx, state, nUAHFHeight - 1, nUAHFStartTime));
     }
 
     {
         // Anti replay commitment, disabled after sunset.
         CValidationState state;
-        BOOST_CHECK(ContextualCheckTransaction(config, tx, state, params,
-                                               nSunsetHeight + 1,
-                                               nUAHFStartTime, nUAHFStartTime));
+        BOOST_CHECK(ContextualCheckTransaction(
+            config, tx, state, nSunsetHeight + 1, nUAHFStartTime));
     }
 }
 

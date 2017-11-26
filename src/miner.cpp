@@ -59,19 +59,23 @@ public:
     }
 };
 
-int64_t UpdateTime(CBlockHeader *pblock,
-                   const Consensus::Params &consensusParams,
+int64_t UpdateTime(CBlockHeader *pblock, const Config &config,
                    const CBlockIndex *pindexPrev) {
     int64_t nOldTime = pblock->nTime;
     int64_t nNewTime =
         std::max(pindexPrev->GetMedianTimePast() + 1, GetAdjustedTime());
 
-    if (nOldTime < nNewTime) pblock->nTime = nNewTime;
+    if (nOldTime < nNewTime) {
+        pblock->nTime = nNewTime;
+    }
+
+    const Consensus::Params &consensusParams =
+        config.GetChainParams().GetConsensus();
 
     // Updating time can change work required on testnet:
-    if (consensusParams.fPowAllowMinDifficultyBlocks)
-        pblock->nBits =
-            GetNextWorkRequired(pindexPrev, pblock, consensusParams);
+    if (consensusParams.fPowAllowMinDifficultyBlocks) {
+        pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, config);
+    }
 
     return nNewTime - nOldTime;
 }
@@ -93,31 +97,14 @@ static uint64_t ComputeMaxGeneratedBlockSize(const Config &config,
         std::max(uint64_t(1000), std::min(config.GetMaxBlockSize() - 1000,
                                           nMaxGeneratedBlockSize));
 
-    // If UAHF is not activated yet, we also want to limit the max generated
-    // block size to LEGACY_MAX_BLOCK_SIZE - 1000
-    if (!IsUAHFenabled(config, pindexPrev)) {
-        nMaxGeneratedBlockSize =
-            std::min(LEGACY_MAX_BLOCK_SIZE - 1000, nMaxGeneratedBlockSize);
-    }
-
     return nMaxGeneratedBlockSize;
-}
-
-static uint64_t ComputeMinGeneratedBlockSize(const Config &config,
-                                             const CBlockIndex *pindexPrev) {
-    if (IsUAHFenabled(config, pindexPrev) &&
-        !IsUAHFenabled(config, pindexPrev->pprev)) {
-        return LEGACY_MAX_BLOCK_SIZE + 1;
-    }
-
-    return 0;
 }
 
 BlockAssembler::BlockAssembler(const Config &_config,
                                const CChainParams &_chainparams)
     : chainparams(_chainparams), config(&_config) {
     if (IsArgSet("-blockmintxfee")) {
-        CAmount n = 0;
+        Amount n(0);
         ParseMoney(GetArg("-blockmintxfee", ""), n);
         blockMinFeeRate = CFeeRate(n);
     } else {
@@ -138,17 +125,17 @@ void BlockAssembler::resetBlock() {
 
     // These counters do not include coinbase tx.
     nBlockTx = 0;
-    nFees = 0;
+    nFees = Amount(0);
 
     lastFewTxs = 0;
     blockFinished = false;
 }
 
-static const std::vector<unsigned char>
+static const std::vector<uint8_t>
 getExcessiveBlockSizeSig(const Config &config) {
     std::string cbmsg = "/EB" + getSubVersionEB(config.GetMaxBlockSize()) + "/";
     const char *cbcstr = cbmsg.c_str();
-    std::vector<unsigned char> vec(cbcstr, cbcstr + cbmsg.size());
+    std::vector<uint8_t> vec(cbcstr, cbcstr + cbmsg.size());
     return vec;
 }
 
@@ -159,16 +146,19 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     resetBlock();
 
     pblocktemplate.reset(new CBlockTemplate());
-
-    if (!pblocktemplate.get()) return nullptr;
+    if (!pblocktemplate.get()) {
+        return nullptr;
+    }
 
     // Pointer for convenience.
     pblock = &pblocktemplate->block;
 
     // Add dummy coinbase tx as first transaction.
     pblock->vtx.emplace_back();
-    pblocktemplate->vTxFees.push_back(-1);        // updated at end
-    pblocktemplate->vTxSigOpsCount.push_back(-1); // updated at end
+    // updated at end
+    pblocktemplate->vTxFees.push_back(Amount(-1));
+    // updated at end
+    pblocktemplate->vTxSigOpsCount.push_back(-1);
 
     LOCK2(cs_main, mempool.cs);
     CBlockIndex *pindexPrev = chainActive.Tip();
@@ -178,16 +168,16 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
         ComputeBlockVersion(pindexPrev, chainparams.GetConsensus());
     // -regtest only: allow overriding block.nVersion with
     // -blockversion=N to test forking scenarios
-    if (chainparams.MineBlocksOnDemand())
+    if (chainparams.MineBlocksOnDemand()) {
         pblock->nVersion = GetArg("-blockversion", pblock->nVersion);
+    }
 
     pblock->nTime = GetAdjustedTime();
-    nMedianTimePast = pindexPrev->GetMedianTimePast();
     nMaxGeneratedBlockSize = ComputeMaxGeneratedBlockSize(*config, pindexPrev);
 
     nLockTimeCutoff =
         (STANDARD_LOCKTIME_VERIFY_FLAGS & LOCKTIME_MEDIAN_TIME_PAST)
-            ? nMedianTimePast
+            ? pindexPrev->GetMedianTimePast()
             : pblock->GetBlockTime();
 
     addPriorityTxs();
@@ -210,50 +200,24 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
         nFees + GetBlockSubsidy(nHeight, chainparams.GetConsensus());
     coinbaseTx.vin[0].scriptSig = CScript() << nHeight << OP_0;
     pblock->vtx[0] = MakeTransactionRef(coinbaseTx);
-    pblocktemplate->vTxFees[0] = -nFees;
+    pblocktemplate->vTxFees[0] = -1 * nFees;
 
     uint64_t nSerializeSize =
         GetSerializeSize(*pblock, SER_NETWORK, PROTOCOL_VERSION);
-
-    // We need a "must be big" block, so we stuff the coinbase.
-    uint64_t nMinBlockSize = ComputeMinGeneratedBlockSize(*config, pindexPrev);
-    if (nSerializeSize < nMinBlockSize) {
-        static const std::string pad =
-            "A purely peer-to-peer version of electronic cash would allow "
-            "online payments to be sent directly from one party to another "
-            "without going through a financial institution.";
-        auto o = CTxOut(
-            0, CScript() << OP_RETURN
-                         << std::vector<unsigned char>(pad.begin(), pad.end()));
-        auto commitmentSize =
-            GetSerializeSize(o, SER_NETWORK, PROTOCOL_VERSION);
-        auto missingCommitment =
-            1 + ((nMinBlockSize - nSerializeSize - 1) / commitmentSize);
-        coinbaseTx.vout.reserve(missingCommitment + 1);
-        for (size_t i = 0; i < missingCommitment; ++i) {
-            coinbaseTx.vout.push_back(o);
-        }
-
-        pblock->vtx[0] = MakeTransactionRef(coinbaseTx);
-        nSerializeSize =
-            GetSerializeSize(*pblock, SER_NETWORK, PROTOCOL_VERSION);
-    }
 
     LogPrintf("CreateNewBlock(): total size: %u txs: %u fees: %ld sigops %d\n",
               nSerializeSize, nBlockTx, nFees, nBlockSigOps);
 
     // Fill in header.
     pblock->hashPrevBlock = pindexPrev->GetBlockHash();
-    UpdateTime(pblock, chainparams.GetConsensus(), pindexPrev);
-    pblock->nBits =
-        GetNextWorkRequired(pindexPrev, pblock, chainparams.GetConsensus());
+    UpdateTime(pblock, *config, pindexPrev);
+    pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, *config);
     pblock->nNonce = 0;
     pblocktemplate->vTxSigOpsCount[0] =
         GetSigOpCountWithoutP2SH(*pblock->vtx[0]);
 
     CValidationState state;
-    if (!TestBlockValidity(*config, state, chainparams, *pblock, pindexPrev,
-                           false, false)) {
+    if (!TestBlockValidity(*config, state, *pblock, pindexPrev, false, false)) {
         throw std::runtime_error(strprintf("%s: TestBlockValidity failed: %s",
                                            __func__,
                                            FormatStateMessage(state)));
@@ -310,9 +274,8 @@ bool BlockAssembler::TestPackageTransactions(
     uint64_t nPotentialBlockSize = nBlockSize;
     for (const CTxMemPool::txiter it : package) {
         CValidationState state;
-        if (!ContextualCheckTransaction(*config, it->GetTx(), state,
-                                        chainparams.GetConsensus(), nHeight,
-                                        nLockTimeCutoff, nMedianTimePast)) {
+        if (!ContextualCheckTransaction(*config, it->GetTx(), state, nHeight,
+                                        nLockTimeCutoff)) {
             return false;
         }
 
@@ -361,9 +324,8 @@ bool BlockAssembler::TestForBlock(CTxMemPool::txiter it) {
     // Must check that lock times are still valid. This can be removed once MTP
     // is always enforced as long as reorgs keep the mempool consistent.
     CValidationState state;
-    if (!ContextualCheckTransaction(*config, it->GetTx(), state,
-                                    chainparams.GetConsensus(), nHeight,
-                                    nLockTimeCutoff, nMedianTimePast)) {
+    if (!ContextualCheckTransaction(*config, it->GetTx(), state, nHeight,
+                                    nLockTimeCutoff)) {
         return false;
     }
 
@@ -383,7 +345,7 @@ void BlockAssembler::AddToBlock(CTxMemPool::txiter iter) {
     bool fPrintPriority = GetBoolArg("-printpriority", DEFAULT_PRINTPRIORITY);
     if (fPrintPriority) {
         double dPriority = iter->GetPriority(nHeight);
-        CAmount dummy;
+        Amount dummy;
         mempool.ApplyDeltas(iter->GetTx().GetId(), dPriority, dummy);
         LogPrintf(
             "priority %.1f fee %s txid %s\n", dPriority,
@@ -401,7 +363,9 @@ int BlockAssembler::UpdatePackagesForAdded(
         mempool.CalculateDescendants(it, descendants);
         // Insert all descendants (not yet in block) into the modified set.
         for (CTxMemPool::txiter desc : descendants) {
-            if (alreadyAdded.count(desc)) continue;
+            if (alreadyAdded.count(desc)) {
+                continue;
+            }
             ++nDescendantsUpdated;
             modtxiter mit = mapModifiedTx.find(desc);
             if (mit == mapModifiedTx.end()) {
@@ -430,8 +394,9 @@ bool BlockAssembler::SkipMapTxEntry(
     CTxMemPool::txiter it, indexed_modified_transaction_set &mapModifiedTx,
     CTxMemPool::setEntries &failedTx) {
     assert(it != mempool.mapTx.end());
-    if (mapModifiedTx.count(it) || inBlock.count(it) || failedTx.count(it))
+    if (mapModifiedTx.count(it) || inBlock.count(it) || failedTx.count(it)) {
         return true;
+    }
     return false;
 }
 
@@ -518,7 +483,7 @@ void BlockAssembler::addPackageTxs(int &nPackagesSelected,
         assert(!inBlock.count(iter));
 
         uint64_t packageSize = iter->GetSizeWithAncestors();
-        CAmount packageFees = iter->GetModFeesWithAncestors();
+        Amount packageFees = iter->GetModFeesWithAncestors();
         int64_t packageSigOps = iter->GetSigOpCountWithAncestors();
         if (fUsingModified) {
             packageSize = modit->nSizeWithAncestors;
@@ -592,12 +557,12 @@ void BlockAssembler::addPackageTxs(int &nPackagesSelected,
 void BlockAssembler::addPriorityTxs() {
     // How much of the block should be dedicated to high-priority transactions,
     // included regardless of the fees they pay.
-    uint64_t nBlockPrioritySize =
-        GetArg("-blockprioritysize", DEFAULT_BLOCK_PRIORITY_SIZE);
-    nBlockPrioritySize = std::min(nMaxGeneratedBlockSize, nBlockPrioritySize);
-    if (nBlockPrioritySize == 0) {
+    if (config->GetBlockPriorityPercentage() == 0) {
         return;
     }
+
+    uint64_t nBlockPrioritySize =
+        nMaxGeneratedBlockSize * config->GetBlockPriorityPercentage() / 100;
 
     // This vector will be sorted into a priority queue:
     std::vector<TxCoinAgePriority> vecPriority;
@@ -613,7 +578,7 @@ void BlockAssembler::addPriorityTxs() {
              mempool.mapTx.begin();
          mi != mempool.mapTx.end(); ++mi) {
         double dPriority = mi->GetPriority(nHeight);
-        CAmount dummy;
+        Amount dummy;
         mempool.ApplyDeltas(mi->GetTx().GetId(), dPriority, dummy);
         vecPriority.push_back(TxCoinAgePriority(dPriority, mi));
     }
@@ -621,7 +586,8 @@ void BlockAssembler::addPriorityTxs() {
 
     CTxMemPool::txiter iter;
 
-    // Add a tx from priority queue to fill the blockprioritysize.
+    // Add a tx from priority queue to fill the part of block reserved to
+    // priority transactions.
     while (!vecPriority.empty() && !blockFinished) {
         iter = vecPriority.front().second;
         actualPriority = vecPriority.front().first;

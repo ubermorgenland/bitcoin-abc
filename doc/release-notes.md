@@ -1,11 +1,10 @@
-Bitcoin ABC version 0.14.6 is now available from:
+Bitcoin ABC version 0.16.2 is now available from:
 
-  <https://download.bitcoinabc.org/0.14.6/>
+  <https://download.bitcoinabc.org/0.16.2/>
 
 This release includes the following features and fixes:
- - Updated debian packaging
- - Updated FreeBSD build instructions
- - Fix a bug where a node would erroneously increase the ban score of its peers when it hasn't caught up with the chain tip
- - Added various detail about peer misbehaving
- - Add tooling to help maintaing good style for python code
- - Added criptolayer.net DNS seeds
+
+ - Remove the newdaaactivationtime configuration.
+ - Do not use the NODE_BITCOIN_CASH service bit for preferencial peering anymore.
+ - Only connect to node using the cash magic.
+ - Remove indicator mentionning if a node uses the cash magic getpeerinfo RPC.
