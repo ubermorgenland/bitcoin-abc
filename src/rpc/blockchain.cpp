@@ -29,6 +29,9 @@
 
 #include <condition_variable>
 #include <mutex>
+#include <core_io.h>
+#include <clientversion.h>
+#include <base58.h>
 
 struct CUpdatedBlock {
     uint256 hash;
@@ -1627,6 +1630,65 @@ UniValue reconsiderblock(const Config &config, const JSONRPCRequest &request) {
     return NullUniValue;
 }
 
+
+static UniValue getutxocount(const Config &config, const JSONRPCRequest &request) {
+
+    int counter = 0;
+    uint64_t value = 0;
+    //FlushStateToDisk();
+    boost::scoped_ptr<CCoinsViewCursor> pcursor(pcoinsTip->Cursor());
+    txnouttype type;
+    std::vector<CTxDestination> address;
+    int nRequired;
+
+    UniValue obj(UniValue::VOBJ);
+    obj.push_back(Pair("version", CLIENT_VERSION));
+    obj.push_back(Pair("size", pcoinsTip->EstimateSize() ));
+
+    std::ofstream outfile("/tmp/utxodump.txt");
+
+    // iterate pcoinsTip (UTXO database)
+    while (pcursor->Valid()) {
+        boost::this_thread::interruption_point();
+
+        Coin coin;
+        COutPoint outp;
+
+        if (pcursor->GetKey(outp) && pcursor->GetValue(coin)) {
+            uint256 key = outp.hash;
+
+            const CTxOut &out = coin.out;
+
+            if (!out.IsNull()) {
+                counter++;
+                UniValue o(UniValue::VOBJ);
+                ScriptPubKeyToUniv(out.scriptPubKey, o, true);
+                ExtractDestinations(out.scriptPubKey, type, address, nRequired);
+
+                //outfile << CBitcoinAddress(address.front()).ToString() << ":" << coin.GetHeight() << ":" << out.nValue <<"\n";
+                outfile << EncodeDestination(address.front()) << ":" << coin.GetHeight() << ":" << out.nValue <<"\n";
+
+
+            }
+
+
+
+        } else {
+            return error("%s: unable to read value", __func__);
+        }
+
+        pcursor->Next();
+
+    }
+
+    outfile.close();
+    obj.push_back(Pair("utxocount", counter));
+
+    return obj;
+
+}
+
+
 // clang-format off
 static const CRPCCommand commands[] = {
     //  category            name                      actor (function)        okSafe argNames
@@ -1649,6 +1711,7 @@ static const CRPCCommand commands[] = {
     { "blockchain",         "pruneblockchain",        pruneblockchain,        true,  {"height"} },
     { "blockchain",         "verifychain",            verifychain,            true,  {"checklevel","nblocks"} },
     { "blockchain",         "preciousblock",          preciousblock,          true,  {"blockhash"} },
+    { "blockchain",         "getutxocount",           getutxocount,           true,  {} },
 
     /* Not shown in help */
     { "hidden",             "invalidateblock",        invalidateblock,        true,  {"blockhash"} },

@@ -26,14 +26,17 @@
  * - the non-spent CTxOut (via CTxOutCompressor)
  */
 class Coin {
-    //! Unspent transaction output.
-    CTxOut out;
+
 
     //! Whether containing transaction was a coinbase and height at which the
     //! transaction was included into a block.
     uint32_t nHeightAndIsCoinBase;
 
 public:
+    //! Unspent transaction output.
+    // made public
+    CTxOut out;
+
     //! Empty constructor
     Coin() : nHeightAndIsCoinBase(0) {}
 
